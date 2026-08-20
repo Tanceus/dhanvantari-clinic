@@ -115,6 +115,8 @@ export interface Message {
   appointmentId: string | null;
   generatedAt: string;
   sentAt: string | null;
+  /** Backend skip gate, e.g. no_consent / duplicate. Null when not skipped. */
+  skipReason: string | null;
 }
 
 export type UpdateMessageInput = Pick<Message, "subject" | "body">;

@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { useAuth } from "../lib/auth/AuthProvider";
 import { useClinicConfig } from "../config/ClinicConfigProvider";
 import {
   AppointmentsIcon,
@@ -58,6 +59,7 @@ function NavItem({
 
 export function Sidebar() {
   const { config } = useClinicConfig();
+  const { signOut } = useAuth();
 
   return (
     <>
@@ -81,6 +83,13 @@ export function Sidebar() {
           <p className="mt-0.5 text-sm font-medium text-text-primary">
             {config.doctorName}
           </p>
+          <button
+            type="button"
+            onClick={() => void signOut()}
+            className="mt-3 min-h-11 w-full rounded-lg border border-line px-3 text-sm font-medium text-text-muted transition-colors hover:bg-line/40 hover:text-text-primary"
+          >
+            Sign out
+          </button>
         </div>
       </aside>
 

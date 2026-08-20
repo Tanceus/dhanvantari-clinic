@@ -3,6 +3,7 @@
 # Netlify site — they must never fall through to index.html.
 
 /                  /index.html   200
+/login             /index.html   200
 /dashboard         /index.html   200
 /patients          /index.html   200
 /patients/*        /index.html   200

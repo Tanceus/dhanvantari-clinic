@@ -11,7 +11,7 @@ import { TreatmentTag } from "../components/TreatmentTag";
 import { useAppointment } from "../lib/hooks/useAppointments";
 import { useTriggerMessage } from "../lib/hooks/useMessages";
 import { usePatient } from "../lib/hooks/usePatients";
-import type { MessageType } from "../types";
+import type { Message, MessageType } from "../types";
 import { formatDateTime, getInitials } from "../lib/utils";
 import { getErrorMessage } from "../lib/api/client";
 
@@ -21,6 +21,47 @@ const MESSAGE_ACTIONS: { label: string; type: MessageType }[] = [
   { label: "Schedule Follow-up", type: "follow-up" },
 ];
 
+type BannerTone = "success" | "warning" | "error";
+
+type TriggerBanner = {
+  tone: BannerTone;
+  title: string;
+};
+
+const BANNER_TONE_CLASS: Record<BannerTone, string> = {
+  success:
+    "border-status-completed/25 bg-status-completed/8 text-status-completed",
+  warning: "border-gold/25 bg-gold/8 text-text-primary",
+  error: "border-terracotta/30 bg-terracotta/8 text-terracotta",
+};
+
+/**
+ * Copy for every skip_reason the backend currently writes on a messages row
+ * (message_engine gates) plus already_exists from sweep-level dedup, in case
+ * that value ever appears on a trigger response.
+ */
+const SKIP_REASON_COPY: Record<string, string> = {
+  no_consent: "Message blocked — patient consent pending",
+  patient_deleted: "Message blocked — this patient has been removed",
+  duplicate: "Message blocked — a similar message was already sent recently",
+  already_exists: "Message blocked — a similar message already exists",
+};
+
+function bannerForTriggeredMessage(message: Message): TriggerBanner {
+  if (message.skipReason) {
+    return {
+      tone: "warning",
+      title:
+        SKIP_REASON_COPY[message.skipReason] ??
+        `Message blocked — ${message.skipReason.replace(/_/g, " ")}`,
+    };
+  }
+  if (message.status === "failed") {
+    return { tone: "error", title: "Message failed to send" };
+  }
+  return { tone: "success", title: "Draft created" };
+}
+
 export function AppointmentDetailPage() {
   const { appointmentId } = useParams<{ appointmentId: string }>();
   const { config } = useClinicConfig();
@@ -29,7 +70,9 @@ export function AppointmentDetailPage() {
   const { data: patient } = usePatient(appointment?.patientId);
   const triggerMessage = useTriggerMessage();
 
-  const [draftBanner, setDraftBanner] = useState(false);
+  const [triggerBanner, setTriggerBanner] = useState<TriggerBanner | null>(
+    null,
+  );
 
   if (isLoading) {
     return <AppointmentDetailSkeleton />;
@@ -71,8 +114,8 @@ export function AppointmentDetailPage() {
         appointmentId: appointment!.id,
       },
       {
-        onSuccess: () => {
-          setDraftBanner(true);
+        onSuccess: (message) => {
+          setTriggerBanner(bannerForTriggeredMessage(message));
         },
       },
     );
@@ -94,14 +137,12 @@ export function AppointmentDetailPage() {
         Back to appointments
       </Link>
 
-      {draftBanner && (
+      {triggerBanner && (
         <div
           role="status"
-          className="flex flex-col gap-2 rounded-lg border border-status-completed/25 bg-status-completed/8 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+          className={`flex flex-col gap-2 rounded-lg border px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between ${BANNER_TONE_CLASS[triggerBanner.tone]}`}
         >
-          <span className="font-medium text-status-completed">
-            Draft created
-          </span>
+          <span className="font-medium">{triggerBanner.title}</span>
           <Link
             to="/messages"
             className="font-medium text-brand-primary hover:underline"

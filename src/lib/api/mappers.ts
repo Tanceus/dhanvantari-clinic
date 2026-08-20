@@ -251,6 +251,7 @@ export function mapMessage(row: ApiMessage): Message {
     appointmentId: row.appointment_id,
     generatedAt: row.created_at ?? new Date().toISOString(),
     sentAt: row.sent_at,
+    skipReason: row.skip_reason,
   };
 }
 

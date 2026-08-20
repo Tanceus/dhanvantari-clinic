@@ -142,6 +142,7 @@ export function mapAppointment(
     patientId: row.patient_id,
     datetime: row.scheduled_at,
     treatmentType: treatmentName || "",
+    treatmentId: row.treatment_id ?? "",
     status: mapAppointmentStatus(row.status),
     notes: row.notes ?? "",
   };
@@ -170,6 +171,18 @@ export function toAppointmentCreate(
     treatment_id: treatmentId,
     scheduled_at: draft.datetime,
     notes: draft.notes || null,
+  };
+}
+
+export function toAppointmentUpdate(
+  draft: CreateAppointmentInput,
+  treatmentId: string,
+): Record<string, unknown> {
+  return {
+    treatment_id: treatmentId,
+    scheduled_at: draft.datetime,
+    notes: draft.notes || null,
+    status: draft.status,
   };
 }
 

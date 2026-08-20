@@ -1,14 +1,18 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useClinicConfig } from "../config/ClinicConfigProvider";
 import { ConsentBadge } from "../components/ConsentBadge";
 import { EmptyState } from "../components/EmptyState";
 import { QueryErrorState } from "../components/QueryErrorState";
+import { ScheduleAppointmentDrawer } from "../components/ScheduleAppointmentDrawer";
 import { CalendarDayIcon, ChevronLeftIcon } from "../components/icons";
 import { PrakritiBadge } from "../components/PrakritiBadge";
 import { StatusControl } from "../components/StatusControl";
 import { TreatmentTag } from "../components/TreatmentTag";
-import { useAppointment } from "../lib/hooks/useAppointments";
+import {
+  useAppointment,
+  useDeleteAppointment,
+} from "../lib/hooks/useAppointments";
 import { useTriggerMessage } from "../lib/hooks/useMessages";
 import { usePatient } from "../lib/hooks/usePatients";
 import type { Message, MessageType } from "../types";
@@ -65,14 +69,20 @@ function bannerForTriggeredMessage(message: Message): TriggerBanner {
 export function AppointmentDetailPage() {
   const { appointmentId } = useParams<{ appointmentId: string }>();
   const { config } = useClinicConfig();
+  const navigate = useNavigate();
 
   const { data: appointment, isLoading, isError, error, refetch } = useAppointment(appointmentId);
   const { data: patient } = usePatient(appointment?.patientId);
   const triggerMessage = useTriggerMessage();
+  const deleteAppointment = useDeleteAppointment();
 
   const [triggerBanner, setTriggerBanner] = useState<TriggerBanner | null>(
     null,
   );
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   if (isLoading) {
     return <AppointmentDetailSkeleton />;
@@ -137,6 +147,21 @@ export function AppointmentDetailPage() {
         Back to appointments
       </Link>
 
+      {successMessage && (
+        <div
+          role="status"
+          className="rounded-lg border border-status-completed/25 bg-status-completed/8 px-4 py-3 text-sm font-medium text-status-completed"
+        >
+          {successMessage}
+        </div>
+      )}
+
+      {actionError && (
+        <p role="alert" className="rounded-lg border border-terracotta/30 bg-terracotta/8 px-4 py-3 text-sm text-terracotta">
+          {actionError}
+        </p>
+      )}
+
       {triggerBanner && (
         <div
           role="status"
@@ -159,8 +184,30 @@ export function AppointmentDetailPage() {
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <TreatmentTag treatment={appointment.treatmentType} />
         </div>
-        <div className="mt-5 border-t border-line pt-5">
+        <div className="mt-5 space-y-3 border-t border-line pt-5">
           <StatusControl appointment={appointment} variant="prominent" />
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setActionError(null);
+                setDrawerOpen(true);
+              }}
+              className="min-h-11 rounded-lg border border-line bg-bg-base px-4 text-sm font-medium text-text-primary transition-colors hover:border-gold/40 hover:bg-bg-surface"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActionError(null);
+                setDeleteOpen(true);
+              }}
+              className="min-h-11 rounded-lg border border-terracotta/25 px-4 text-sm font-medium text-terracotta transition-colors hover:bg-terracotta/8"
+            >
+              Delete
+            </button>
+          </div>
         </div>
       </header>
 
@@ -245,6 +292,97 @@ export function AppointmentDetailPage() {
           </div>
         </div>
       </section>
+
+      <ScheduleAppointmentDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onSuccess={() => {
+          setSuccessMessage("Appointment updated.");
+          setTimeout(() => setSuccessMessage(null), 4000);
+        }}
+        appointment={appointment}
+      />
+
+      {deleteOpen && (
+        <DeleteAppointmentDialog
+          busy={deleteAppointment.isPending}
+          onCancel={() => setDeleteOpen(false)}
+          onConfirm={() => {
+            deleteAppointment.mutate(
+              {
+                appointmentId: appointment.id,
+                patientId: appointment.patientId,
+              },
+              {
+                onSuccess: () => {
+                  navigate("/appointments");
+                },
+                onError: (err) => {
+                  setDeleteOpen(false);
+                  setActionError(getErrorMessage(err));
+                },
+              },
+            );
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function DeleteAppointmentDialog({
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <button
+        type="button"
+        className="absolute inset-0 bg-text-primary/20 backdrop-blur-[2px]"
+        aria-label="Close dialog"
+        onClick={onCancel}
+        disabled={busy}
+      />
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="delete-appointment-title"
+        aria-describedby="delete-appointment-body"
+        className="relative z-10 w-full max-w-md rounded-2xl border border-line bg-bg-surface p-6 shadow-elevated"
+      >
+        <h2
+          id="delete-appointment-title"
+          className="font-display text-xl font-semibold text-text-primary"
+        >
+          Delete appointment
+        </h2>
+        <p id="delete-appointment-body" className="mt-2 text-sm leading-relaxed text-text-muted">
+          Delete this appointment permanently? This cannot be undone.
+        </p>
+        <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="min-h-11 rounded-lg border border-line px-4 text-sm font-medium text-text-muted transition-colors hover:bg-line/30 disabled:opacity-50"
+          >
+            Keep appointment
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            className="min-h-11 rounded-lg bg-terracotta px-4 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+          >
+            {busy ? "Deleting..." : "Delete permanently"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

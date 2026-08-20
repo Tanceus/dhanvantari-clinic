@@ -1,9 +1,18 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { useClinicConfig } from "../config/ClinicConfigProvider";
-import { useCreateAppointment } from "../lib/hooks/useAppointments";
+import { getErrorMessage } from "../lib/api/client";
+import {
+  useCreateAppointment,
+  useUpdateAppointment,
+} from "../lib/hooks/useAppointments";
 import { usePatients } from "../lib/hooks/usePatients";
-import type { AppointmentStatus } from "../types";
-import { combineDateAndTime, toDateInputValue } from "../lib/utils";
+import { useTreatments } from "../lib/hooks/useTreatments";
+import type { Appointment, AppointmentStatus, CreateAppointmentInput } from "../types";
+import {
+  combineDateAndTime,
+  toDateInputValue,
+  toTimeInputValue,
+} from "../lib/utils";
 import { CloseIcon } from "./icons";
 
 interface ScheduleAppointmentDrawerProps {
@@ -11,13 +20,15 @@ interface ScheduleAppointmentDrawerProps {
   onClose: () => void;
   onSuccess: () => void;
   defaultDate?: Date;
+  /** When set, the drawer edits this appointment (PATCH) instead of creating. */
+  appointment?: Appointment;
 }
 
 interface FormState {
   patientId: string;
   date: string;
   time: string;
-  treatmentType: string;
+  treatmentId: string;
   notes: string;
   status: AppointmentStatus;
 }
@@ -26,7 +37,32 @@ interface FormErrors {
   patientId?: string;
   date?: string;
   time?: string;
-  treatmentType?: string;
+  treatmentId?: string;
+}
+
+function emptyForm(date: string): FormState {
+  return {
+    patientId: "",
+    date,
+    time: "10:00",
+    treatmentId: "",
+    notes: "",
+    status: "scheduled",
+  };
+}
+
+function formFromAppointment(
+  appointment: Appointment,
+  timezone: string,
+): FormState {
+  return {
+    patientId: appointment.patientId,
+    date: toDateInputValue(new Date(appointment.datetime), timezone),
+    time: toTimeInputValue(appointment.datetime, timezone),
+    treatmentId: appointment.treatmentId || "",
+    notes: appointment.notes,
+    status: appointment.status,
+  };
 }
 
 export function ScheduleAppointmentDrawer({
@@ -34,25 +70,41 @@ export function ScheduleAppointmentDrawer({
   onClose,
   onSuccess,
   defaultDate,
+  appointment,
 }: ScheduleAppointmentDrawerProps) {
   const { config } = useClinicConfig();
   const { data: patients } = usePatients();
+  const { data: treatments, isLoading: treatmentsLoading } = useTreatments();
   const createAppointment = useCreateAppointment();
+  const updateAppointment = useUpdateAppointment();
+
+  const isEdit = Boolean(appointment);
 
   const initialDate = toDateInputValue(
     defaultDate ?? new Date(),
     config.timezone,
   );
 
-  const [form, setForm] = useState<FormState>({
-    patientId: "",
-    date: initialDate,
-    time: "10:00",
-    treatmentType: config.treatmentTypes[0] ?? "",
-    notes: "",
-    status: "scheduled",
-  });
+  const [form, setForm] = useState<FormState>(() =>
+    appointment
+      ? formFromAppointment(appointment, config.timezone)
+      : emptyForm(initialDate),
+  );
   const [errors, setErrors] = useState<FormErrors>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const selectableTreatments = useMemo(() => {
+    const all = treatments ?? [];
+    const active = all.filter((t) => t.active !== false);
+    if (
+      form.treatmentId &&
+      !active.some((t) => t.id === form.treatmentId)
+    ) {
+      const current = all.find((t) => t.id === form.treatmentId);
+      if (current) return [current, ...active];
+    }
+    return active;
+  }, [treatments, form.treatmentId]);
 
   useEffect(() => {
     if (!open) return;
@@ -71,17 +123,44 @@ export function ScheduleAppointmentDrawer({
 
   useEffect(() => {
     if (!open) {
-      setForm({
-        patientId: "",
-        date: toDateInputValue(defaultDate ?? new Date(), config.timezone),
-        time: "10:00",
-        treatmentType: config.treatmentTypes[0] ?? "",
-        notes: "",
-        status: "scheduled",
-      });
+      setForm(emptyForm(toDateInputValue(defaultDate ?? new Date(), config.timezone)));
       setErrors({});
+      setSubmitError(null);
+      return;
     }
-  }, [open, defaultDate, config.timezone, config.treatmentTypes]);
+
+    if (appointment) {
+      setForm(formFromAppointment(appointment, config.timezone));
+    } else {
+      setForm(emptyForm(toDateInputValue(defaultDate ?? new Date(), config.timezone)));
+    }
+    setErrors({});
+    setSubmitError(null);
+    // Initialize only when the drawer opens so in-progress edits are not wiped
+    // by a background refetch of `appointment`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || selectableTreatments.length === 0) return;
+    setForm((prev) => {
+      if (
+        prev.treatmentId &&
+        selectableTreatments.some((t) => t.id === prev.treatmentId)
+      ) {
+        return prev;
+      }
+      if (appointment?.treatmentType) {
+        const match = selectableTreatments.find(
+          (t) =>
+            t.name.toLowerCase() === appointment.treatmentType.toLowerCase(),
+        );
+        if (match) return { ...prev, treatmentId: match.id };
+      }
+      if (appointment) return prev;
+      return { ...prev, treatmentId: selectableTreatments[0].id };
+    });
+  }, [open, selectableTreatments, appointment]);
 
   if (!open) return null;
 
@@ -90,33 +169,55 @@ export function ScheduleAppointmentDrawer({
     if (!form.patientId) next.patientId = "Select a patient";
     if (!form.date.trim()) next.date = "Date is required";
     if (!form.time.trim()) next.time = "Time is required";
-    if (!form.treatmentType) next.treatmentType = "Select a treatment type";
+    if (!form.treatmentId) next.treatmentId = "Select a treatment type";
     return next;
+  }
+
+  function draftFromForm(): CreateAppointmentInput {
+    const selected = selectableTreatments.find((t) => t.id === form.treatmentId);
+    return {
+      patientId: form.patientId,
+      datetime: combineDateAndTime(form.date, form.time),
+      treatmentType: selected?.name ?? appointment?.treatmentType ?? "",
+      treatmentId: form.treatmentId,
+      notes: form.notes.trim(),
+      status: form.status,
+    };
   }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    setSubmitError(null);
     const validationErrors = validate();
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       return;
     }
 
-    createAppointment.mutate(
-      {
-        patientId: form.patientId,
-        datetime: combineDateAndTime(form.date, form.time),
-        treatmentType: form.treatmentType,
-        notes: form.notes.trim(),
-        status: form.status,
+    const draft = draftFromForm();
+    const callbacks = {
+      onSuccess: () => {
+        onClose();
+        onSuccess();
       },
-      {
-        onSuccess: () => {
-          onClose();
-          onSuccess();
-        },
+      onError: (err: Error) => {
+        console.error(
+          isEdit ? "Failed to update appointment" : "Failed to schedule appointment",
+          err,
+        );
+        setSubmitError(getErrorMessage(err));
       },
-    );
+    };
+
+    if (appointment) {
+      updateAppointment.mutate(
+        { appointmentId: appointment.id, draft },
+        callbacks,
+      );
+      return;
+    }
+
+    createAppointment.mutate(draft, callbacks);
   }
 
   function updateField<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -129,6 +230,15 @@ export function ScheduleAppointmentDrawer({
   const sortedPatients = [...(patients ?? [])].sort((a, b) =>
     a.name.localeCompare(b.name),
   );
+  const saving = createAppointment.isPending || updateAppointment.isPending;
+  const title = isEdit ? "Edit Appointment" : "Schedule Appointment";
+  const submitLabel = isEdit
+    ? saving
+      ? "Saving..."
+      : "Save"
+    : saving
+      ? "Scheduling..."
+      : "Schedule";
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
@@ -143,14 +253,14 @@ export function ScheduleAppointmentDrawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby="schedule-appointment-title"
-        className="relative flex h-full w-full max-w-md flex-col border-l border-line bg-bg-surface shadow-elevated sm:max-w-lg"
+        className="relative z-10 flex h-full w-full max-w-md flex-col border-l border-line bg-bg-surface shadow-elevated sm:max-w-lg"
       >
         <header className="flex items-center justify-between border-b border-line px-5 py-4 sm:px-6">
           <h2
             id="schedule-appointment-title"
             className="font-display text-xl font-semibold text-text-primary"
           >
-            Schedule Appointment
+            {title}
           </h2>
           <button
             type="button"
@@ -172,6 +282,7 @@ export function ScheduleAppointmentDrawer({
                 value={form.patientId}
                 onChange={(e) => updateField("patientId", e.target.value)}
                 className={inputClass(errors.patientId)}
+                disabled={isEdit}
               >
                 <option value="">Select patient...</option>
                 {sortedPatients.map((p) => (
@@ -201,17 +312,24 @@ export function ScheduleAppointmentDrawer({
               </Field>
             </div>
 
-            <Field label="Treatment type" error={errors.treatmentType} required>
+            <Field label="Treatment type" error={errors.treatmentId} required>
               <select
-                value={form.treatmentType}
-                onChange={(e) => updateField("treatmentType", e.target.value)}
-                className={inputClass(errors.treatmentType)}
+                value={form.treatmentId}
+                onChange={(e) => updateField("treatmentId", e.target.value)}
+                className={inputClass(errors.treatmentId)}
+                disabled={treatmentsLoading}
               >
-                {config.treatmentTypes.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
+                {treatmentsLoading ? (
+                  <option value="">Loading treatments...</option>
+                ) : selectableTreatments.length === 0 ? (
+                  <option value="">No treatments available</option>
+                ) : (
+                  selectableTreatments.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))
+                )}
               </select>
             </Field>
 
@@ -242,6 +360,11 @@ export function ScheduleAppointmentDrawer({
           </div>
 
           <footer className="mt-auto border-t border-line px-5 py-4 sm:px-6">
+            {submitError && (
+              <p role="alert" className="mb-3 text-sm text-terracotta">
+                {submitError}
+              </p>
+            )}
             <div className="flex gap-3">
               <button
                 type="button"
@@ -252,10 +375,10 @@ export function ScheduleAppointmentDrawer({
               </button>
               <button
                 type="submit"
-                disabled={createAppointment.isPending}
+                disabled={saving || treatmentsLoading}
                 className="min-h-11 flex-1 rounded-lg bg-brand-primary px-4 text-sm font-medium text-white shadow-soft transition-opacity hover:opacity-90 disabled:opacity-60"
               >
-                {createAppointment.isPending ? "Scheduling..." : "Schedule"}
+                {submitLabel}
               </button>
             </div>
           </footer>
@@ -289,7 +412,7 @@ function Field({
 }
 
 function inputClass(error?: string) {
-  return `w-full rounded-lg border bg-bg-base px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted/60 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-primary/20 ${
+  return `w-full rounded-lg border bg-bg-base px-3 py-2.5 text-sm text-text-primary placeholder:text-text-muted/60 transition-colors focus:outline-none focus:ring-2 focus:ring-brand-primary/20 disabled:cursor-not-allowed disabled:opacity-70 ${
     error ? "border-terracotta/50" : "border-line focus:border-brand-primary/40"
   }`;
 }

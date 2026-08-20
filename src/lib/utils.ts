@@ -167,3 +167,16 @@ export function addDays(date: Date, days: number): Date {
 export function toDateInputValue(date: Date, timezone: string): string {
   return getDateKeyInTimezone(date, timezone);
 }
+
+/** `HH:MM` in 24-hour clock, for `<input type="time">`. */
+export function toTimeInputValue(isoString: string, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date(isoString));
+  const hour = parts.find((p) => p.type === "hour")?.value ?? "00";
+  const minute = parts.find((p) => p.type === "minute")?.value ?? "00";
+  return `${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`;
+}

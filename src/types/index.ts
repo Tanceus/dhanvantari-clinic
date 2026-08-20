@@ -94,6 +94,8 @@ export interface Appointment {
   patientId: string;
   datetime: string;
   treatmentType: string;
+  /** Live treatments.id. Empty when the API row has no treatment_id. */
+  treatmentId: string;
   status: AppointmentStatus;
   notes: string;
 }

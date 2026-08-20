@@ -8,6 +8,8 @@ import {
   fetchUpcomingAppointments,
   getById,
   getByPatientId,
+  remove,
+  update,
   updateStatus,
 } from "../services/appointmentService";
 
@@ -176,6 +178,68 @@ export function useCreateAppointment() {
       queryClient.invalidateQueries({
         queryKey: ["appointments", "patient", clinicId, appointment.patientId],
       });
+    },
+  });
+}
+
+interface UpdateAppointmentVariables {
+  appointmentId: string;
+  draft: CreateAppointmentInput;
+}
+
+export function useUpdateAppointment() {
+  const { clinicId } = useClinicConfig();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ appointmentId, draft }: UpdateAppointmentVariables) =>
+      update(clinicId, appointmentId, draft),
+    onSuccess: (appointment) => {
+      queryClient.invalidateQueries({ queryKey: ["appointments", clinicId] });
+      queryClient.invalidateQueries({
+        queryKey: ["appointment", clinicId, appointment.id],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["appointments", "today", clinicId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["appointments", "upcoming", clinicId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["appointments", "patient", clinicId, appointment.patientId],
+      });
+    },
+  });
+}
+
+interface DeleteAppointmentVariables {
+  appointmentId: string;
+  patientId?: string;
+}
+
+export function useDeleteAppointment() {
+  const { clinicId } = useClinicConfig();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ appointmentId }: DeleteAppointmentVariables) =>
+      remove(clinicId, appointmentId),
+    onSuccess: (_void, { appointmentId, patientId }) => {
+      queryClient.removeQueries({
+        queryKey: ["appointment", clinicId, appointmentId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["appointments", clinicId] });
+      queryClient.invalidateQueries({
+        queryKey: ["appointments", "today", clinicId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["appointments", "upcoming", clinicId],
+      });
+      if (patientId) {
+        queryClient.invalidateQueries({
+          queryKey: ["appointments", "patient", clinicId, patientId],
+        });
+      }
     },
   });
 }

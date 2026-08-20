@@ -3,6 +3,7 @@ import {
   mapAppointment,
   matchTreatmentId,
   toAppointmentCreate,
+  toAppointmentUpdate,
 } from "../api/mappers";
 import type { ApiAppointment } from "../api/types";
 import type {
@@ -105,10 +106,9 @@ export async function create(
   draftAppointment: CreateAppointmentInput,
 ): Promise<Appointment> {
   const treatments = await getTreatments(clinicId);
-  const treatmentId = matchTreatmentId(
-    treatments,
-    draftAppointment.treatmentType,
-  );
+  const treatmentId =
+    draftAppointment.treatmentId ||
+    matchTreatmentId(treatments, draftAppointment.treatmentType);
   if (!treatmentId) {
     const available = treatments.map((t) => t.name).join(", ") || "(none)";
     throw new ApiError(
@@ -127,6 +127,41 @@ export async function create(
     Promise.resolve(new Map(treatments.map((t) => [t.id, t.name]))),
   ]);
   return mapAppointment(row, names.get(row.treatment_id ?? "") ?? "");
+}
+
+export async function update(
+  clinicId: string,
+  appointmentId: string,
+  draftAppointment: CreateAppointmentInput,
+): Promise<Appointment> {
+  const treatments = await getTreatments(clinicId);
+  const treatmentId =
+    draftAppointment.treatmentId ||
+    matchTreatmentId(treatments, draftAppointment.treatmentType);
+  if (!treatmentId) {
+    const available = treatments.map((t) => t.name).join(", ") || "(none)";
+    throw new ApiError(
+      400,
+      `No treatment named "${draftAppointment.treatmentType}" for this clinic. Available: ${available}`,
+    );
+  }
+
+  const [row, names] = await Promise.all([
+    api<ApiAppointment>(`/appointments/${appointmentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(toAppointmentUpdate(draftAppointment, treatmentId)),
+    }),
+    Promise.resolve(new Map(treatments.map((t) => [t.id, t.name]))),
+  ]);
+  return mapAppointment(row, names.get(row.treatment_id ?? "") ?? "");
+}
+
+export async function remove(
+  clinicId: string,
+  appointmentId: string,
+): Promise<void> {
+  void clinicId;
+  await api(`/appointments/${appointmentId}`, { method: "DELETE" });
 }
 
 export async function fetchTodaysAppointments(

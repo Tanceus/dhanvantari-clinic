@@ -5,7 +5,7 @@
 [build.environment]
   NODE_VERSION = "20"
 
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+# Redirect / rewrite rules live in public/_redirects (copied into dist).
+# Do NOT add a catch-all /* → /index.html 200 here — that re-opens the
+# "any URL serves the staff app" bug. Known routes + /r/* 404 + catch-all
+# 404 are defined explicitly in _redirects.

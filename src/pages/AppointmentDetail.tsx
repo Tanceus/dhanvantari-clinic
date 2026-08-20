@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useClinicConfig } from "../config/ClinicConfigProvider";
 import { ConsentBadge } from "../components/ConsentBadge";
 import { EmptyState } from "../components/EmptyState";
+import { QueryErrorState } from "../components/QueryErrorState";
 import { CalendarDayIcon, ChevronLeftIcon } from "../components/icons";
 import { PrakritiBadge } from "../components/PrakritiBadge";
 import { StatusControl } from "../components/StatusControl";
@@ -12,6 +13,7 @@ import { useTriggerMessage } from "../lib/hooks/useMessages";
 import { usePatient } from "../lib/hooks/usePatients";
 import type { MessageType } from "../types";
 import { formatDateTime, getInitials } from "../lib/utils";
+import { getErrorMessage } from "../lib/api/client";
 
 const MESSAGE_ACTIONS: { label: string; type: MessageType }[] = [
   { label: "Send Reminder", type: "reminder" },
@@ -23,7 +25,7 @@ export function AppointmentDetailPage() {
   const { appointmentId } = useParams<{ appointmentId: string }>();
   const { config } = useClinicConfig();
 
-  const { data: appointment, isLoading } = useAppointment(appointmentId);
+  const { data: appointment, isLoading, isError, error, refetch } = useAppointment(appointmentId);
   const { data: patient } = usePatient(appointment?.patientId);
   const triggerMessage = useTriggerMessage();
 
@@ -31,6 +33,15 @@ export function AppointmentDetailPage() {
 
   if (isLoading) {
     return <AppointmentDetailSkeleton />;
+  }
+
+  if (isError) {
+    return (
+      <QueryErrorState
+        message={getErrorMessage(error)}
+        onRetry={() => void refetch()}
+      />
+    );
   }
 
   if (!appointment) {

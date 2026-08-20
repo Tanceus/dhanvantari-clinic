@@ -3,11 +3,13 @@ import { Link, useNavigate } from "react-router-dom";
 import { useClinicConfig } from "../config/ClinicConfigProvider";
 import { DateNavigator } from "../components/DateNavigator";
 import { EmptyState } from "../components/EmptyState";
+import { QueryErrorState } from "../components/QueryErrorState";
 import { CalendarDayIcon, PlusIcon } from "../components/icons";
 import { ScheduleAppointmentDrawer } from "../components/ScheduleAppointmentDrawer";
 import { StatusControl } from "../components/StatusControl";
 import { TreatmentTag } from "../components/TreatmentTag";
 import { useAppointments } from "../lib/hooks/useAppointments";
+import { getErrorMessage } from "../lib/api/client";
 import { usePatient } from "../lib/hooks/usePatients";
 import type { Appointment, AppointmentStatus } from "../types";
 import {
@@ -38,7 +40,7 @@ const UPCOMING_LIMIT = 8;
 
 export function AppointmentsPage() {
   const { config } = useClinicConfig();
-  const { data: appointments, isLoading } = useAppointments();
+  const { data: appointments, isLoading, isError, error, refetch } = useAppointments();
 
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("All");
@@ -167,7 +169,12 @@ export function AppointmentsPage() {
       </div>
 
       <section aria-label="Day agenda">
-        {isLoading ? (
+        {isError ? (
+          <QueryErrorState
+            message={getErrorMessage(error)}
+            onRetry={() => void refetch()}
+          />
+        ) : isLoading ? (
           <AgendaSkeleton />
         ) : dayAppointments.length === 0 ? (
           <EmptyState

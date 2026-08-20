@@ -12,6 +12,8 @@ import { MessageStatusBadge } from "../components/MessageStatusBadge";
 import { MessageTypeBadge } from "../components/MessageTypeBadge";
 import { PrakritiBadge } from "../components/PrakritiBadge";
 import { StatusBadge } from "../components/StatusBadge";
+import { QueryErrorState } from "../components/QueryErrorState";
+import { getErrorMessage } from "../lib/api/client";
 import { usePatientAppointments } from "../lib/hooks/useAppointments";
 import { usePatientMessages } from "../lib/hooks/useMessages";
 import { usePatient } from "../lib/hooks/usePatients";
@@ -22,16 +24,25 @@ export function PatientDetailPage() {
   const { patientId } = useParams<{ patientId: string }>();
   const { config } = useClinicConfig();
 
-  const { data: patient, isLoading: patientLoading } = usePatient(patientId);
-  const { data: appointments, isLoading: appointmentsLoading } =
+  const { data: patient, isLoading: patientLoading, isError: patientError, error: patientErr, refetch: refetchPatient } = usePatient(patientId);
+  const { data: appointments, isLoading: appointmentsLoading, isError: appointmentsError, error: appointmentsErr, refetch: refetchAppointments } =
     usePatientAppointments(patientId);
-  const { data: messages, isLoading: messagesLoading } =
+  const { data: messages, isLoading: messagesLoading, isError: messagesError, error: messagesErr, refetch: refetchMessages } =
     usePatientMessages(patientId);
 
   const isLoading = patientLoading;
 
   if (isLoading) {
     return <PatientDetailSkeleton />;
+  }
+
+  if (patientError) {
+    return (
+      <QueryErrorState
+        message={getErrorMessage(patientErr)}
+        onRetry={() => void refetchPatient()}
+      />
+    );
   }
 
   if (!patient) {
@@ -74,7 +85,12 @@ export function PatientDetailPage() {
               title="Visit History"
               description="Past and upcoming appointments"
             />
-            {appointmentsLoading ? (
+            {appointmentsError ? (
+              <QueryErrorState
+                message={getErrorMessage(appointmentsErr)}
+                onRetry={() => void refetchAppointments()}
+              />
+            ) : appointmentsLoading ? (
               <SectionSkeleton rows={3} />
             ) : appointments && appointments.length > 0 ? (
               <ol className="relative space-y-0 border-l border-line pl-6">
@@ -123,7 +139,12 @@ export function PatientDetailPage() {
               title="Messages"
               description="Communications sent or drafted for this patient"
             />
-            {messagesLoading ? (
+            {messagesError ? (
+              <QueryErrorState
+                message={getErrorMessage(messagesErr)}
+                onRetry={() => void refetchMessages()}
+              />
+            ) : messagesLoading ? (
               <SectionSkeleton rows={2} />
             ) : messages && messages.length > 0 ? (
               <div className="space-y-3">

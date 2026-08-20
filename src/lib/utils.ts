@@ -1,9 +1,3 @@
-const MOCK_DELAY_MS = 280;
-
-export function delay<T>(data: T, ms = MOCK_DELAY_MS): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(data), ms));
-}
-
 export function isSameDay(dateA: Date, dateB: Date): boolean {
   return (
     dateA.getFullYear() === dateB.getFullYear() &&

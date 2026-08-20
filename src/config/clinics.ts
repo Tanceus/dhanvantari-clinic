@@ -83,6 +83,11 @@ export const CLINIC_IDS: string[] = Object.keys(CLINIC_CONFIGS);
 /**
  * Active tenant for this build.
  * Prefer VITE_ACTIVE_CLINIC_ID when set; otherwise the hardcoded default.
+ *
+ * VITE_ACTIVE_CLINIC_ID (branding key, e.g. dhanvantari-001) and
+ * VITE_CLINIC_ID (API UUID sent as X-Clinic-Id) are the same
+ * "which clinic am I" concept, but two separate env vars until Cycle 8
+ * multi-clinic login. Keep them in sync manually — do not merge yet.
  */
 export const ACTIVE_CLINIC_ID: string =
   (import.meta.env.VITE_ACTIVE_CLINIC_ID?.trim() || DEFAULT_ACTIVE_CLINIC_ID);

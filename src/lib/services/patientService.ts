@@ -1,42 +1,103 @@
-import { MOCK_PATIENTS } from "../../data/mockPatients";
+import { api, apiQuery, isNotFoundError } from "../api/client";
+import {
+  mapPatient,
+  toPatientConsentPatch,
+  toPatientCreate,
+} from "../api/mappers";
+import type { ApiPatient } from "../api/types";
 import type { CreatePatientInput, Patient } from "../../types";
-import { delay } from "../utils";
 
-export async function fetchPatients(clinicId: string): Promise<Patient[]> {
-  const patients = MOCK_PATIENTS.filter((p) => p.clinicId === clinicId);
-  return delay(patients);
+/**
+ * clinicId is the Cycle 0 branding key from useClinicConfig().
+ * The API tenant is VITE_CLINIC_ID (X-Clinic-Id). Keep both in sync
+ * until Cycle 8 login merges them.
+ */
+
+export async function getAll(
+  clinicId: string,
+  search?: string,
+): Promise<Patient[]> {
+  void clinicId;
+  const rows = await api<ApiPatient[]>(
+    `/patients${apiQuery({ search: search?.trim() || undefined })}`,
+  );
+  return rows.map(mapPatient);
 }
+
+export const fetchPatients = getAll;
 
 export async function getById(
   clinicId: string,
   patientId: string,
 ): Promise<Patient | undefined> {
-  const patient = MOCK_PATIENTS.find(
-    (p) => p.clinicId === clinicId && p.id === patientId,
-  );
-  return delay(patient);
+  void clinicId;
+  try {
+    const row = await api<ApiPatient>(`/patients/${patientId}`);
+    return mapPatient(row);
+  } catch (error) {
+    if (isNotFoundError(error)) return undefined;
+    throw error;
+  }
 }
 
-// SEAM — becomes POST /patients in Cycle 2/5; in-memory only for now.
 export async function create(
   clinicId: string,
   draftPatient: CreatePatientInput,
 ): Promise<Patient> {
-  const nums = MOCK_PATIENTS.map((p) =>
-    parseInt(p.id.replace("pat-", ""), 10),
-  ).filter((n) => !isNaN(n));
-  const nextId = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+  void clinicId;
+  const created = await api<ApiPatient>("/patients", {
+    method: "POST",
+    body: JSON.stringify(toPatientCreate(draftPatient)),
+  });
 
-  const today = new Date().toISOString().split("T")[0];
-  const newPatient: Patient = {
-    ...draftPatient,
-    id: `pat-${String(nextId).padStart(3, "0")}`,
-    clinicId,
-    lastVisit: draftPatient.lastVisit ?? today,
-  };
+  const consentPatch = toPatientConsentPatch(draftPatient);
+  if (!consentPatch) {
+    return mapPatient(created);
+  }
 
-  MOCK_PATIENTS.push(newPatient);
-  return delay(newPatient);
+  try {
+    const updated = await api<ApiPatient>(`/patients/${created.id}`, {
+      method: "PATCH",
+      body: JSON.stringify(consentPatch),
+    });
+    return mapPatient(updated);
+  } catch {
+    return mapPatient(created);
+  }
+}
+
+export async function update(
+  clinicId: string,
+  patientId: string,
+  patch: Partial<CreatePatientInput>,
+): Promise<Patient> {
+  void clinicId;
+  const body: Record<string, unknown> = {};
+  if (patch.name !== undefined) body.name = patch.name;
+  if (patch.phone !== undefined) body.phone = patch.phone;
+  if (patch.email !== undefined) body.email = patch.email || null;
+  if (patch.prakriti !== undefined) body.prakriti = patch.prakriti;
+  if (patch.primaryConcern !== undefined) body.notes = patch.primaryConcern || null;
+  if (patch.consentStatus !== undefined) {
+    body.consent_status = patch.consentStatus;
+    body.consent_granted_at =
+      patch.consentStatus === "granted"
+        ? (patch.consentDate ?? new Date().toISOString())
+        : null;
+  }
+  const row = await api<ApiPatient>(`/patients/${patientId}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+  return mapPatient(row);
+}
+
+export async function remove(
+  clinicId: string,
+  patientId: string,
+): Promise<void> {
+  void clinicId;
+  await api<ApiPatient>(`/patients/${patientId}`, { method: "DELETE" });
 }
 
 /** @deprecated Use getById — kept for any existing imports */

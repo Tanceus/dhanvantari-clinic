@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useClinicConfig } from "../config/ClinicConfigProvider";
 import { EmailPreview } from "../components/EmailPreview";
 import { EmptyState } from "../components/EmptyState";
+import { QueryErrorState } from "../components/QueryErrorState";
 import { ChevronLeftIcon, InboxIcon } from "../components/icons";
 import { MessageStatusBadge } from "../components/MessageStatusBadge";
 import { MessageTypeBadge } from "../components/MessageTypeBadge";
@@ -15,13 +16,14 @@ import {
 } from "../lib/hooks/useMessages";
 import { usePatient } from "../lib/hooks/usePatients";
 import { formatDateTime } from "../lib/utils";
+import { getErrorMessage } from "../lib/api/client";
 
 export function MessageDetailPage() {
   const { messageId } = useParams<{ messageId: string }>();
   const navigate = useNavigate();
   const { config } = useClinicConfig();
 
-  const { data: message, isLoading } = useMessage(messageId);
+  const { data: message, isLoading, isError, error, refetch } = useMessage(messageId);
   const { data: patient } = usePatient(message?.patientId);
 
   const updateMessage = useUpdateMessage();
@@ -43,6 +45,15 @@ export function MessageDetailPage() {
 
   if (isLoading) {
     return <MessageDetailSkeleton />;
+  }
+
+  if (isError) {
+    return (
+      <QueryErrorState
+        message={getErrorMessage(error)}
+        onRetry={() => void refetch()}
+      />
+    );
   }
 
   if (!message) {

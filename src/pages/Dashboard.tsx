@@ -1,9 +1,11 @@
 import { useClinicConfig } from "../config/ClinicConfigProvider";
 import { useTodaysAppointments } from "../lib/hooks/useAppointments";
 import { useDraftMessages, useDashboardStats } from "../lib/hooks/useMessages";
+import { getErrorMessage } from "../lib/api/client";
 import { formatDate } from "../lib/utils";
 import { AppointmentCard } from "../components/AppointmentCard";
 import { EmptyState } from "../components/EmptyState";
+import { QueryErrorState } from "../components/QueryErrorState";
 import {
   CalendarDayIcon,
   InboxIcon,
@@ -24,10 +26,11 @@ export function Dashboard() {
   const { config } = useClinicConfig();
   const today = formatDate(new Date(), config.locale, config.timezone);
 
-  const { data: stats, isLoading: statsLoading } = useDashboardStats();
-  const { data: todaysAppointments, isLoading: appointmentsLoading } =
+  const { data: stats, isLoading: statsLoading, isError: statsError, error: statsErr, refetch: refetchStats } =
+    useDashboardStats();
+  const { data: todaysAppointments, isLoading: appointmentsLoading, isError: appointmentsError, error: appointmentsErr, refetch: refetchAppointments } =
     useTodaysAppointments();
-  const { data: draftMessages, isLoading: messagesLoading } =
+  const { data: draftMessages, isLoading: messagesLoading, isError: messagesError, error: messagesErr, refetch: refetchMessages } =
     useDraftMessages();
 
   const activeAppointments =
@@ -57,36 +60,43 @@ export function Dashboard() {
 
       {/* Stat cards */}
       <section aria-label="Overview statistics">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard
-            label="Today's Appointments"
-            value={stats?.todaysAppointments ?? 0}
-            loading={statsLoading}
-            hint="Scheduled for today"
-            icon={<CalendarDayIcon className="h-5 w-5" />}
+        {statsError ? (
+          <QueryErrorState
+            message={getErrorMessage(statsErr)}
+            onRetry={() => void refetchStats()}
           />
-          <StatCard
-            label="Patients Seen Today"
-            value={stats?.patientsSeenToday ?? 0}
-            loading={statsLoading}
-            hint="Completed visits"
-            icon={<UsersIcon className="h-5 w-5" />}
-          />
-          <StatCard
-            label="Messages Awaiting Review"
-            value={stats?.messagesAwaitingReview ?? 0}
-            loading={statsLoading}
-            hint="Draft messages"
-            icon={<InboxIcon className="h-5 w-5" />}
-          />
-          <StatCard
-            label="New Patients"
-            value={stats?.newPatientsThisWeek ?? 0}
-            loading={statsLoading}
-            hint="This week"
-            icon={<SparkleIcon className="h-5 w-5" />}
-          />
-        </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard
+              label="Today's Appointments"
+              value={stats?.todaysAppointments ?? 0}
+              loading={statsLoading}
+              hint="Scheduled for today"
+              icon={<CalendarDayIcon className="h-5 w-5" />}
+            />
+            <StatCard
+              label="Patients Seen Today"
+              value={stats?.patientsSeenToday ?? 0}
+              loading={statsLoading}
+              hint="Completed visits"
+              icon={<UsersIcon className="h-5 w-5" />}
+            />
+            <StatCard
+              label="Messages Awaiting Review"
+              value={stats?.messagesAwaitingReview ?? 0}
+              loading={statsLoading}
+              hint="Draft messages"
+              icon={<InboxIcon className="h-5 w-5" />}
+            />
+            <StatCard
+              label="New Patients"
+              value={stats?.newPatientsThisWeek ?? 0}
+              loading={statsLoading}
+              hint="This week"
+              icon={<SparkleIcon className="h-5 w-5" />}
+            />
+          </div>
+        )}
       </section>
 
       {/* Main content grid */}
@@ -108,7 +118,12 @@ export function Dashboard() {
             </div>
           </div>
 
-          {appointmentsLoading ? (
+          {appointmentsError ? (
+            <QueryErrorState
+              message={getErrorMessage(appointmentsErr)}
+              onRetry={() => void refetchAppointments()}
+            />
+          ) : appointmentsLoading ? (
             <div className="space-y-3">
               {[1, 2, 3].map((i) => (
                 <div
@@ -147,7 +162,12 @@ export function Dashboard() {
               </p>
             </div>
 
-            {messagesLoading ? (
+            {messagesError ? (
+              <QueryErrorState
+                message={getErrorMessage(messagesErr)}
+                onRetry={() => void refetchMessages()}
+              />
+            ) : messagesLoading ? (
               <div className="space-y-3">
                 {[1, 2].map((i) => (
                   <div

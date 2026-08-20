@@ -1,1 +1,20 @@
-/*    /index.html   200
+# Explicit SPA fallbacks for known staff-app routes only.
+# Unknown paths (and patient reschedule links under /r/) must 404 on this
+# Netlify site — they must never fall through to index.html.
+
+/                  /index.html   200
+/dashboard         /index.html   200
+/patients          /index.html   200
+/patients/*        /index.html   200
+/appointments      /index.html   200
+/appointments/*    /index.html   200
+/messages          /index.html   200
+/messages/*        /index.html   200
+
+# Reschedule tokens belong on the backend (Railway), never this frontend.
+/r                 /404.html     404
+/r/                /404.html     404
+/r/*               /404.html     404
+
+# Everything else: real HTTP 404 (not the React app).
+/*                 /404.html     404

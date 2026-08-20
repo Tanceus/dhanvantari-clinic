@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useClinicConfig } from "../config/ClinicConfigProvider";
 import { EmptyState } from "../components/EmptyState";
+import { QueryErrorState } from "../components/QueryErrorState";
 import { InboxIcon } from "../components/icons";
 import { MessageStatusBadge } from "../components/MessageStatusBadge";
 import { MessageTypeBadge } from "../components/MessageTypeBadge";
@@ -9,6 +10,7 @@ import { useMessages } from "../lib/hooks/useMessages";
 import { usePatient } from "../lib/hooks/usePatients";
 import type { Message, MessageStatus } from "../types";
 import { formatDateTime } from "../lib/utils";
+import { getErrorMessage } from "../lib/api/client";
 
 type MessageFilter = "All" | "Drafts" | "Sent" | "Failed";
 
@@ -44,7 +46,7 @@ const EMPTY_COPY: Record<MessageFilter, { title: string; description: string }> 
 
 export function MessagesPage() {
   const { config } = useClinicConfig();
-  const { data: messages, isLoading } = useMessages();
+  const { data: messages, isLoading, isError, error, refetch } = useMessages();
   const [filter, setFilter] = useState<MessageFilter>("Drafts");
 
   const counts = useMemo(() => {
@@ -101,7 +103,12 @@ export function MessagesPage() {
         ))}
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <QueryErrorState
+          message={getErrorMessage(error)}
+          onRetry={() => void refetch()}
+        />
+      ) : isLoading ? (
         <MessageListSkeleton />
       ) : filteredMessages.length === 0 ? (
         <EmptyState

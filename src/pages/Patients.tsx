@@ -4,8 +4,10 @@ import { useClinicConfig } from "../config/ClinicConfigProvider";
 import { AddPatientDrawer } from "../components/AddPatientDrawer";
 import { ConsentBadge } from "../components/ConsentBadge";
 import { EmptyState } from "../components/EmptyState";
+import { QueryErrorState } from "../components/QueryErrorState";
 import { PlusIcon, SearchIcon, UsersIcon } from "../components/icons";
 import { PrakritiBadge } from "../components/PrakritiBadge";
+import { getErrorMessage } from "../lib/api/client";
 import { usePatients } from "../lib/hooks/usePatients";
 import type { ConsentStatus, Patient } from "../types";
 import { formatShortDate, prakritiIncludesDosha } from "../lib/utils";
@@ -16,7 +18,7 @@ type ConsentFilter = "All" | "Granted" | "Pending";
 export function PatientsPage() {
   const { config } = useClinicConfig();
   const navigate = useNavigate();
-  const { data: patients, isLoading } = usePatients();
+  const { data: patients, isLoading, isError, error, refetch } = usePatients();
 
   const [search, setSearch] = useState("");
   const [prakritiFilter, setPrakritiFilter] = useState<PrakritiFilter>("All");
@@ -118,7 +120,12 @@ export function PatientsPage() {
         </div>
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <QueryErrorState
+          message={getErrorMessage(error)}
+          onRetry={() => void refetch()}
+        />
+      ) : isLoading ? (
         <PatientListSkeleton />
       ) : filteredPatients.length === 0 ? (
         <EmptyState

@@ -115,12 +115,15 @@ export async function discard(
   clinicId: string,
   messageId: string,
 ): Promise<void> {
+  await deleteMessage(clinicId, messageId);
+}
+
+export async function deleteMessage(
+  clinicId: string,
+  messageId: string,
+): Promise<void> {
   void clinicId;
-  void messageId;
-  throw new ApiError(
-    501,
-    "Discard is not available on the live API yet. DELETE /messages/{id} does not exist.",
-  );
+  await api(`/messages/${messageId}`, { method: "DELETE" });
 }
 
 export async function fetchDraftMessages(

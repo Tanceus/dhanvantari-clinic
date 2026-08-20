@@ -1,13 +1,15 @@
 import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useClinicConfig } from "../config/ClinicConfigProvider";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EmptyState } from "../components/EmptyState";
 import { QueryErrorState } from "../components/QueryErrorState";
-import { InboxIcon } from "../components/icons";
+import { InboxIcon, TrashIcon } from "../components/icons";
 import { MessageStatusBadge } from "../components/MessageStatusBadge";
 import { MessageTypeBadge } from "../components/MessageTypeBadge";
-import { useMessages } from "../lib/hooks/useMessages";
+import { useDeleteMessage, useMessages } from "../lib/hooks/useMessages";
 import { usePatient } from "../lib/hooks/usePatients";
+import { canDeleteMessage, SENT_MESSAGE_DELETE_HINT } from "../lib/messageDelete";
 import type { Message, MessageStatus } from "../types";
 import { formatDateTime } from "../lib/utils";
 import { getErrorMessage } from "../lib/api/client";
@@ -47,7 +49,10 @@ const EMPTY_COPY: Record<MessageFilter, { title: string; description: string }> 
 export function MessagesPage() {
   const { config } = useClinicConfig();
   const { data: messages, isLoading, isError, error, refetch } = useMessages();
+  const deleteMessage = useDeleteMessage();
   const [filter, setFilter] = useState<MessageFilter>("Drafts");
+  const [pendingDelete, setPendingDelete] = useState<Message | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const counts = useMemo(() => {
     if (!messages) return { draft: 0, sent: 0, failed: 0 };
@@ -73,6 +78,12 @@ export function MessagesPage() {
 
   const emptyCopy = EMPTY_COPY[filter];
 
+  function requestDelete(message: Message) {
+    if (!canDeleteMessage(message.status)) return;
+    setActionError(null);
+    setPendingDelete(message);
+  }
+
   return (
     <div className="space-y-6">
       <header>
@@ -85,6 +96,15 @@ export function MessagesPage() {
             : `${counts.draft} draft${counts.draft === 1 ? "" : "s"} awaiting review · ${counts.sent} sent${counts.failed > 0 ? ` · ${counts.failed} failed` : ""}`}
         </p>
       </header>
+
+      {actionError && (
+        <div
+          role="alert"
+          className="rounded-lg border border-terracotta/30 bg-terracotta/8 px-4 py-3 text-sm font-medium text-terracotta"
+        >
+          {actionError}
+        </div>
+      )}
 
       <div className="inline-flex w-full flex-wrap gap-1 rounded-xl border border-line bg-bg-surface p-1 shadow-soft sm:w-auto">
         {(["All", "Drafts", "Sent", "Failed"] as const).map((tab) => (
@@ -128,6 +148,9 @@ export function MessagesPage() {
                   <th className="px-5 py-3.5">Status</th>
                   <th className="px-5 py-3.5">Generated</th>
                   <th className="px-5 py-3.5">Channel</th>
+                  <th className="px-5 py-3.5">
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -137,6 +160,7 @@ export function MessagesPage() {
                     message={message}
                     locale={config.locale}
                     timezone={config.timezone}
+                    onDelete={() => requestDelete(message)}
                   />
                 ))}
               </tbody>
@@ -150,10 +174,33 @@ export function MessagesPage() {
                 message={message}
                 locale={config.locale}
                 timezone={config.timezone}
+                onDelete={() => requestDelete(message)}
               />
             ))}
           </div>
         </>
+      )}
+
+      {pendingDelete && (
+        <ConfirmDialog
+          title="Delete message"
+          body="Delete this message permanently? This cannot be undone."
+          confirmLabel="Delete permanently"
+          cancelLabel="Keep message"
+          busy={deleteMessage.isPending}
+          busyLabel="Deleting..."
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => {
+            const id = pendingDelete.id;
+            deleteMessage.mutate(id, {
+              onSuccess: () => setPendingDelete(null),
+              onError: (err) => {
+                setPendingDelete(null);
+                setActionError(getErrorMessage(err));
+              },
+            });
+          }}
+        />
       )}
     </div>
   );
@@ -163,10 +210,12 @@ function MessageTableRow({
   message,
   locale,
   timezone,
+  onDelete,
 }: {
   message: Message;
   locale: string;
   timezone: string;
+  onDelete: () => void;
 }) {
   const navigate = useNavigate();
   const { data: patient } = usePatient(message.patientId);
@@ -186,7 +235,7 @@ function MessageTableRow({
       }}
       tabIndex={0}
       role="link"
-      className="cursor-pointer border-b border-line/70 transition-colors last:border-b-0 hover:bg-brand-primary/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary/30"
+      className="group cursor-pointer border-b border-line/70 transition-colors last:border-b-0 hover:bg-brand-primary/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-primary/30"
     >
       <td className="px-5 py-4">
         <MessageTypeBadge type={message.type} />
@@ -206,6 +255,9 @@ function MessageTableRow({
       <td className="px-5 py-4 capitalize text-text-muted">
         {message.channel}
       </td>
+      <td className="px-5 py-4 text-right">
+        <RowDeleteButton status={message.status} onDelete={onDelete} />
+      </td>
     </tr>
   );
 }
@@ -214,34 +266,72 @@ function MessageCard({
   message,
   locale,
   timezone,
+  onDelete,
 }: {
   message: Message;
   locale: string;
   timezone: string;
+  onDelete: () => void;
 }) {
   const { data: patient } = usePatient(message.patientId);
 
   return (
-    <Link
-      to={`/messages/${message.id}`}
-      className="block min-h-11 rounded-xl border border-line bg-bg-surface p-4 shadow-soft transition-all hover:border-gold/30 hover:shadow-card active:scale-[0.99]"
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <MessageTypeBadge type={message.type} />
-        <MessageStatusBadge status={message.status} />
+    <div className="rounded-xl border border-line bg-bg-surface p-4 shadow-soft transition-all hover:border-gold/30 hover:shadow-card">
+      <Link
+        to={`/messages/${message.id}`}
+        className="block min-h-11 active:scale-[0.99]"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <MessageTypeBadge type={message.type} />
+          <MessageStatusBadge status={message.status} />
+        </div>
+        <p className="mt-3 font-medium text-text-primary">
+          {patient?.name ?? "..."}
+        </p>
+        <p className="mt-1 line-clamp-2 text-sm text-text-muted">
+          {message.subject}
+        </p>
+        <p className="mt-2 text-xs text-text-muted/80">
+          {formatDateTime(message.generatedAt, locale, timezone)} ·{" "}
+          {message.channel}
+        </p>
+      </Link>
+      <div className="mt-3 flex justify-end border-t border-line/70 pt-3">
+        <RowDeleteButton status={message.status} onDelete={onDelete} label="Delete" />
       </div>
-      <p className="mt-3 font-medium text-text-primary">
-        {patient?.name ?? "..."}
-      </p>
-      <p className="mt-1 line-clamp-2 text-sm text-text-muted">
-        {message.subject}
-      </p>
-      <p className="mt-2 text-xs text-text-muted/80">
-        {formatDateTime(message.generatedAt, locale, timezone)} ·{" "}
-        {message.channel}
-      </p>
-    </Link>
+    </div>
   );
+}
+
+function RowDeleteButton({
+  status,
+  onDelete,
+  label,
+}: {
+  status: MessageStatus;
+  onDelete: () => void;
+  label?: string;
+}) {
+  const locked = !canDeleteMessage(status);
+  const button = (
+    <button
+      type="button"
+      aria-label={locked ? SENT_MESSAGE_DELETE_HINT : "Delete message"}
+      title={locked ? SENT_MESSAGE_DELETE_HINT : "Delete"}
+      disabled={locked}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!locked) onDelete();
+      }}
+      className="inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-lg px-2 text-sm font-medium text-terracotta/80 opacity-100 transition-colors hover:bg-terracotta/10 hover:text-terracotta disabled:cursor-not-allowed disabled:opacity-40 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+    >
+      <TrashIcon className="h-4 w-4" />
+      {label ? <span>{label}</span> : null}
+    </button>
+  );
+  if (!locked) return button;
+  return <span title={SENT_MESSAGE_DELETE_HINT}>{button}</span>;
 }
 
 function MessageListSkeleton() {

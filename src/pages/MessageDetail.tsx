@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { useClinicConfig } from "../config/ClinicConfigProvider";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EmailPreview } from "../components/EmailPreview";
 import { EmptyState } from "../components/EmptyState";
 import { QueryErrorState } from "../components/QueryErrorState";
@@ -8,13 +9,14 @@ import { ChevronLeftIcon, InboxIcon } from "../components/icons";
 import { MessageStatusBadge } from "../components/MessageStatusBadge";
 import { MessageTypeBadge } from "../components/MessageTypeBadge";
 import {
-  useDiscardMessage,
+  useDeleteMessage,
   useMessage,
   useRegenerateMessage,
   useSendMessage,
   useUpdateMessage,
 } from "../lib/hooks/useMessages";
 import { usePatient } from "../lib/hooks/usePatients";
+import { canDeleteMessage, SENT_MESSAGE_DELETE_HINT } from "../lib/messageDelete";
 import { formatDateTime } from "../lib/utils";
 import { getErrorMessage } from "../lib/api/client";
 
@@ -29,12 +31,14 @@ export function MessageDetailPage() {
   const updateMessage = useUpdateMessage();
   const sendMessage = useSendMessage();
   const regenerateMessage = useRegenerateMessage();
-  const discardMessage = useDiscardMessage();
+  const deleteMessage = useDeleteMessage();
 
   const [editMode, setEditMode] = useState(false);
   const [editSubject, setEditSubject] = useState("");
   const [editBody, setEditBody] = useState("");
   const [saveNotice, setSaveNotice] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (message) {
@@ -132,14 +136,12 @@ export function MessageDetailPage() {
     sendMessage.mutate(message!.id);
   }
 
-  function handleDiscard() {
-    const confirmed = window.confirm(
-      "Discard this draft? This cannot be undone.",
-    );
-    if (!confirmed) return;
-    discardMessage.mutate(message!.id, {
-      onSuccess: () => navigate("/messages"),
-    });
+  const deletable = canDeleteMessage(message.status);
+
+  function handleDelete() {
+    if (!deletable) return;
+    setActionError(null);
+    setDeleteOpen(true);
   }
 
   const displaySubject = editMode ? editSubject : message.subject;
@@ -161,6 +163,15 @@ export function MessageDetailPage() {
           className="rounded-lg border border-status-completed/25 bg-status-completed/8 px-4 py-3 text-sm font-medium text-status-completed"
         >
           Changes saved.
+        </div>
+      )}
+
+      {actionError && (
+        <div
+          role="alert"
+          className="rounded-lg border border-terracotta/30 bg-terracotta/8 px-4 py-3 text-sm font-medium text-terracotta"
+        >
+          {actionError}
         </div>
       )}
 
@@ -326,21 +337,64 @@ export function MessageDetailPage() {
           )}
         </div>
 
-        {isDraft && !editMode && (
-          <div className="mt-5 border-t border-line pt-4">
-            <button
-              type="button"
-              onClick={handleDiscard}
-              disabled={discardMessage.isPending}
-              className="min-h-11 text-sm font-medium text-terracotta/80 transition-colors hover:text-terracotta disabled:opacity-60"
-            >
-              {discardMessage.isPending ? "Discarding..." : "Discard draft"}
-            </button>
-          </div>
-        )}
+        <div className="mt-5 border-t border-line pt-4">
+          <DeleteMessageButton
+            locked={!deletable}
+            pending={deleteMessage.isPending}
+            onClick={handleDelete}
+          />
+        </div>
       </section>
+
+      {deleteOpen && (
+        <ConfirmDialog
+          title="Delete message"
+          body="Delete this message permanently? This cannot be undone."
+          confirmLabel="Delete permanently"
+          cancelLabel="Keep message"
+          busy={deleteMessage.isPending}
+          busyLabel="Deleting..."
+          onCancel={() => setDeleteOpen(false)}
+          onConfirm={() => {
+            deleteMessage.mutate(message.id, {
+              onSuccess: () => {
+                navigate("/messages");
+              },
+              onError: (err) => {
+                setDeleteOpen(false);
+                setActionError(getErrorMessage(err));
+              },
+            });
+          }}
+        />
+      )}
     </div>
   );
+}
+
+function DeleteMessageButton({
+  locked,
+  pending,
+  onClick,
+}: {
+  locked: boolean;
+  pending: boolean;
+  onClick: () => void;
+}) {
+  const button = (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={locked || pending}
+      aria-label={locked ? SENT_MESSAGE_DELETE_HINT : "Delete"}
+      title={locked ? SENT_MESSAGE_DELETE_HINT : undefined}
+      className="min-h-11 text-sm font-medium text-terracotta/80 transition-colors hover:text-terracotta disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {pending ? "Deleting..." : "Delete"}
+    </button>
+  );
+  if (!locked) return button;
+  return <span title={SENT_MESSAGE_DELETE_HINT}>{button}</span>;
 }
 
 function MessageDetailSkeleton() {

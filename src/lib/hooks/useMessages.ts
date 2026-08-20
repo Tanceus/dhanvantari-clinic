@@ -3,7 +3,7 @@ import { useClinicConfig } from "../../config/ClinicConfigProvider";
 import type { MessageType, UpdateMessageInput } from "../../types";
 import {
   createDraft,
-  discard,
+  deleteMessage,
   fetchDashboardStats,
   fetchDraftMessages,
   fetchMessages,
@@ -152,11 +152,15 @@ export function useRegenerateMessage() {
 }
 
 export function useDiscardMessage() {
+  return useDeleteMessage();
+}
+
+export function useDeleteMessage() {
   const { clinicId } = useClinicConfig();
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (messageId: string) => discard(clinicId, messageId),
+    mutationFn: (messageId: string) => deleteMessage(clinicId, messageId),
     onSuccess: (_data, messageId) => {
       queryClient.removeQueries({
         queryKey: ["message", clinicId, messageId],
@@ -167,6 +171,9 @@ export function useDiscardMessage() {
       });
       queryClient.invalidateQueries({
         queryKey: ["dashboard-stats", clinicId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["messages", "patient", clinicId],
       });
     },
   });
